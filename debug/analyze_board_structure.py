@@ -4,7 +4,11 @@
 
 import sys
 import os
+from dotenv import load_dotenv
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+# 환경변수 로드
+load_dotenv()
 
 from everytime_crawler import EverytimeCrawler
 from bs4 import BeautifulSoup

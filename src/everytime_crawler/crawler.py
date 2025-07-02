@@ -9,6 +9,7 @@ import pandas as pd
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
@@ -24,11 +25,21 @@ load_dotenv()
 class EverytimeCrawler:
     def __init__(self):
         """에브리타임 크롤러 초기화"""
+        # 환경변수 다시 로드 (확실하게)
+        load_dotenv(override=True)
+        
         self.base_url = "https://everytime.kr"
         self.session = requests.Session()
         self.driver = None
+        
+        # 환경변수에서 계정 정보 로드
         self.user_id = os.getenv('EVERYTIME_ID')
         self.password = os.getenv('EVERYTIME_PASSWORD')
+        
+        # 디버그: 환경변수 확인
+        print(f"🔍 크롤러 초기화 - 계정 정보:")
+        print(f"   - user_id: {self.user_id}")
+        print(f"   - password: {'*' * len(self.password) if self.password else 'None'}")
         
     def setup_driver(self, headless=True):
         """Selenium WebDriver 설정"""
@@ -53,8 +64,25 @@ class EverytimeCrawler:
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
         try:
-            service = Service(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            # ChromeDriverManager 사용 시도
+            try:
+                service = Service(ChromeDriverManager().install())
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            except Exception as e:
+                print(f"ChromeDriverManager 실패: {e}")
+                # 시스템 PATH에서 chromedriver 찾기 시도
+                try:
+                    self.driver = webdriver.Chrome(options=chrome_options)
+                except Exception as e2:
+                    print(f"시스템 chromedriver 실패: {e2}")
+                    # 마지막 시도: 직접 다운로드된 chromedriver 경로 지정
+                    import shutil
+                    chromedriver_path = shutil.which('chromedriver')
+                    if chromedriver_path:
+                        service = Service(chromedriver_path)
+                        self.driver = webdriver.Chrome(service=service, options=chrome_options)
+                    else:
+                        raise Exception("ChromeDriver를 찾을 수 없습니다. Chrome 브라우저와 호환되는 ChromeDriver를 설치해주세요.")
             
             # 자동화 감지 방지
             self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
@@ -74,19 +102,41 @@ class EverytimeCrawler:
         try:
             print("에브리타임 로그인 시도 중...")
             
-            # 메인 페이지에서 로그인 링크 클릭
-            self.driver.get(f"{self.base_url}")
+            # 메인 페이지에서 시작 (더 자연스러운 접근)
+            self.driver.get("https://everytime.kr")
             print("메인 페이지 로드 완료")
-            time.sleep(2)
+            time.sleep(3)
             
-            # 로그인 링크 클릭
+            # 로그인 링크 찾기 및 클릭
             try:
-                login_link = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.LINK_TEXT, "로그인"))
-                )
-                login_link.click()
-                print("로그인 링크 클릭 완료")
-                time.sleep(3)
+                # 다양한 방법으로 로그인 링크 찾기
+                login_link = None
+                selectors = [
+                    "//a[contains(text(), '로그인')]",
+                    "//a[@href='/login']",
+                    "//a[contains(@href, 'login')]",
+                    ".header a[href*='login']"
+                ]
+                
+                for selector in selectors:
+                    try:
+                        if selector.startswith("//"):
+                            login_link = self.driver.find_element(By.XPATH, selector)
+                        else:
+                            login_link = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        break
+                    except:
+                        continue
+                
+                if login_link:
+                    self.driver.execute_script("arguments[0].click();", login_link)
+                    print("로그인 링크 클릭 완료")
+                    time.sleep(3)
+                else:
+                    # 직접 로그인 페이지로 이동
+                    self.driver.get("https://account.everytime.kr/login")
+                    time.sleep(3)
+                    
             except:
                 # 직접 로그인 페이지로 이동
                 self.driver.get("https://account.everytime.kr/login")
@@ -94,38 +144,87 @@ class EverytimeCrawler:
             
             print(f"현재 URL: {self.driver.current_url}")
             
-            # 로그인 폼 입력 필드 찾기 (업데이트된 name 속성 사용)
-            userid_input = WebDriverWait(self.driver, 10).until(
+            # 페이지가 완전히 로드될 때까지 대기
+            WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.NAME, "id"))
             )
+            
+            # 로그인 폼 입력 필드 찾기
+            userid_input = self.driver.find_element(By.NAME, "id")
             password_input = self.driver.find_element(By.NAME, "password")
             
             print("로그인 폼 찾기 성공")
             
-            # 로그인 정보 입력
+            # 입력 필드 클리어 및 천천히 입력 (사람처럼)
             userid_input.clear()
-            userid_input.send_keys(self.user_id)
+            time.sleep(0.5)
+            for char in self.user_id:
+                userid_input.send_keys(char)
+                time.sleep(0.1)  # 천천히 타이핑
+            
             time.sleep(1)
             
             password_input.clear()
-            password_input.send_keys(self.password)
-            time.sleep(1)
+            time.sleep(0.5)
+            for char in self.password:
+                password_input.send_keys(char)
+                time.sleep(0.1)  # 천천히 타이핑
             
+            time.sleep(2)
             print("로그인 정보 입력 완료")
             
-            # 로그인 버튼 클릭 (업데이트된 value 속성 사용)
-            login_button = self.driver.find_element(By.XPATH, "//input[@type='submit' and @value='에브리타임 로그인']")
-            login_button.click()
-            print("로그인 버튼 클릭 완료")
+            # 로그인 버튼 찾기 및 클릭
+            login_button = None
+            button_selectors = [
+                "//input[@type='submit' and @value='에브리타임 로그인']",
+                "//input[@type='submit']",
+                "//button[contains(text(), '로그인')]",
+                ".submit",
+                "input[type='submit']"
+            ]
             
-            # 로그인 결과 확인 (더 긴 대기 시간)
-            time.sleep(5)
+            for selector in button_selectors:
+                try:
+                    if selector.startswith("//"):
+                        login_button = self.driver.find_element(By.XPATH, selector)
+                    else:
+                        login_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    break
+                except:
+                    continue
             
+            if login_button:
+                # JavaScript로 클릭 (더 안정적)
+                self.driver.execute_script("arguments[0].click();", login_button)
+                print("로그인 버튼 클릭 완료")
+            else:
+                # Enter 키로 로그인 시도
+                password_input.send_keys(Keys.RETURN)
+                print("Enter 키로 로그인 시도")
+            
+            # 로그인 결과 확인
+            time.sleep(3)
+            
+            # Alert 확인
+            try:
+                # Alert가 나타날 때까지 대기 (짧은 시간)
+                WebDriverWait(self.driver, 2).until(EC.alert_is_present())
+                alert = self.driver.switch_to.alert
+                alert_text = alert.text
+                print(f"로그인 실패: Alert Text: {alert_text}")
+                alert.accept()  # Alert 닫기
+                return False
+            except:
+                # Alert가 없으면 로그인 성공 가능성
+                pass
+            
+            # 추가 대기 후 URL 확인
+            time.sleep(2)
             current_url = self.driver.current_url
             print(f"로그인 후 URL: {current_url}")
             
             # 로그인 성공 확인 - 메인 페이지로 리다이렉트되면 성공
-            if current_url == "https://everytime.kr/" or "everytime.kr" in current_url and "login" not in current_url:
+            if current_url == "https://everytime.kr/" or ("everytime.kr" in current_url and "login" not in current_url and "account" not in current_url):
                 print("로그인에 성공했습니다.")
                 return True
             else:
@@ -360,24 +459,37 @@ class EverytimeCrawler:
         Returns:
             list: 게시글 정보 리스트
         """
-        board_map = {
+        # 실제 에브리타임 게시판 URL 매핑 (성남캠 기준)
+        board_url_map = {
+            "free": "387605",        # 성남캠 자유게시판
+            "secret": "375151",      # 비밀게시판
+            "graduate": "387612",    # 졸업생게시판
+            "freshman": "387615",    # 새내기게시판
+        }
+        
+        board_name_map = {
             "free": "자유게시판",
             "secret": "비밀게시판", 
             "freshman": "새내기게시판",
             "graduate": "졸업생게시판",
-            "job": "취업게시판",
-            "exam": "시험정보게시판",
-            "club": "동아리게시판",
-            "market": "장터게시판"
         }
         
-        print(f"🔍 '{board_map.get(board_id, board_id)}' 게시판 크롤링 시작...")
+        if board_id not in board_url_map:
+            print(f"❌ 지원하지 않는 게시판: {board_id}")
+            print(f"📝 지원하는 게시판: {list(board_url_map.keys())}")
+            return []
+        
+        board_name = board_name_map.get(board_id, board_id)
+        board_number = board_url_map[board_id]
+        
+        print(f"🔍 '{board_name}' 게시판 크롤링 시작...")
+        print(f"🌐 게시판 URL: https://everytime.kr/{board_number}")
         
         all_posts = []
         
         try:
-            # 게시판 메인 페이지로 이동
-            board_url = f"{self.base_url}/{board_id}"
+            # 게시판 페이지로 이동
+            board_url = f"{self.base_url}/{board_number}"
             self.driver.get(board_url)
             time.sleep(3)
             
@@ -404,84 +516,6 @@ class EverytimeCrawler:
         
         print(f"🎉 총 {len(all_posts)}개 게시글 수집 완료!")
         return all_posts
-                
-                # 게시글 정보 추출
-                for element in post_elements:
-                    try:
-                        post_data = {
-                            'title': '제목 없음',
-                            'author': '익명',
-                            'created_time': '',
-                            'comment_count': '0',
-                            'post_link': '',
-                            'board_id': board_id,
-                            'page': page,
-                            'collected_at': datetime.now().isoformat()
-                        }
-                        
-                        # 제목 추출
-                        title_selectors = [".title", ".subject", ".headline", "h3", "h4", ".post-title"]
-                        for selector in title_selectors:
-                            title_elem = element.find_elements(By.CSS_SELECTOR, selector)
-                            if title_elem:
-                                post_data['title'] = title_elem[0].text.strip()
-                                
-                                # 링크 추출
-                                link_elem = title_elem[0].find_elements(By.TAG_NAME, "a")
-                                if link_elem:
-                                    href = link_elem[0].get_attribute("href")
-                                    if href:
-                                        post_data['post_link'] = href
-                                break
-                        
-                        # 작성자 추출
-                        author_selectors = [".writer", ".author", ".user", ".nickname"]
-                        for selector in author_selectors:
-                            author_elem = element.find_elements(By.CSS_SELECTOR, selector)
-                            if author_elem:
-                                post_data['author'] = author_elem[0].text.strip()
-                                break
-                        
-                        # 작성 시간 추출
-                        time_selectors = [".time", ".date", ".created", ".timestamp"]
-                        for selector in time_selectors:
-                            time_elem = element.find_elements(By.CSS_SELECTOR, selector)
-                            if time_elem:
-                                post_data['created_time'] = time_elem[0].text.strip()
-                                break
-                        
-                        # 댓글 수 추출
-                        comment_selectors = [".commentcount", ".comment-count", ".comments", ".reply-count"]
-                        for selector in comment_selectors:
-                            comment_elem = element.find_elements(By.CSS_SELECTOR, selector)
-                            if comment_elem:
-                                post_data['comment_count'] = comment_elem[0].text.strip()
-                                break
-                        
-                        # 유효한 게시글만 추가
-                        if post_data['title'] != '제목 없음' and post_data['title'].strip():
-                            all_posts.append(post_data)
-                            print(f"게시글 추가: {post_data['title'][:30]}...")
-                        
-                    except Exception as e:
-                        print(f"게시글 파싱 오류: {e}")
-                        continue
-                
-                print(f"페이지 {page} 수집 완료: {len([p for p in all_posts if p['page'] == page])}개 게시글")
-                time.sleep(1)  # 서버 부하 방지
-            
-            if save_to_file and all_posts:
-                # DataFrame으로 변환 후 CSV 저장
-                df = pd.DataFrame(all_posts)
-                filename = f"board_{board_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                df.to_csv(filename, index=False, encoding='utf-8-sig')
-                print(f"게시판 데이터가 {filename}에 저장되었습니다.")
-            
-            return all_posts
-            
-        except Exception as e:
-            print(f"게시판 수집 오류: {e}")
-            return []
     
     def _extract_posts_from_current_page(self, board_id, page_num):
         """현재 페이지에서 게시글 정보 추출"""
@@ -539,90 +573,69 @@ class EverytimeCrawler:
         return posts
     
     def _extract_single_post_info(self, element, selector_used):
-        """개별 게시글에서 정보 추출"""
+        """개별 게시글에서 정보 추출 (에브리타임 최신 구조에 최적화)"""
         post_info = {}
         
         try:
             # BeautifulSoup으로 더 정확한 파싱
             soup = BeautifulSoup(element.get_attribute('outerHTML'), 'html.parser')
             
-            # 제목 추출 - 다양한 패턴 시도
-            title_selectors = [
-                '.title',
-                '.subject', 
-                'h3',
-                'h4',
-                '.article-title',
-                '.post-title',
-                'a[href*="view"]',
-                '.text'
-            ]
+            # 에브리타임 실제 구조에 맞는 제목 추출
+            # <h2 class="medium bold">제목</h2>
+            title = "제목 없음"
+            title_elem = soup.select_one('h2.medium.bold')
+            if title_elem:
+                title = title_elem.get_text(strip=True)
             
-            title = None
-            for title_sel in title_selectors:
-                title_elem = soup.select_one(title_sel)
-                if title_elem:
-                    title = title_elem.get_text(strip=True)
-                    if title and len(title) > 2:  # 의미있는 제목만
+            # 대체 제목 셀렉터 시도
+            if not title or title == "제목 없음":
+                alt_selectors = ['.title', '.subject', 'h3', 'h4', '.article-title']
+                for sel in alt_selectors:
+                    elem = soup.select_one(sel)
+                    if elem and elem.get_text(strip=True):
+                        title = elem.get_text(strip=True)
                         break
             
-            # 작성자 추출
-            author_selectors = [
-                '.writer',
-                '.author',
-                '.nickname',
-                '.user',
-                '.name'
-            ]
+            # 내용 추출
+            # <p class="medium">내용</p>
+            content = ""
+            content_elem = soup.select_one('p.medium')
+            if content_elem:
+                content = content_elem.get_text(strip=True)
+                # <br> 태그를 공백으로 변환
+                content = content.replace('\n', ' ').replace('\r', '')
             
+            # 작성자 추출  
+            # <h3 class="small">익명</h3>
             author = "익명"
-            for author_sel in author_selectors:
-                author_elem = soup.select_one(author_sel)
-                if author_elem:
-                    author = author_elem.get_text(strip=True)
-                    if author:
-                        break
+            author_elem = soup.select_one('h3.small')
+            if author_elem:
+                author = author_elem.get_text(strip=True)
             
             # 작성시간 추출
-            time_selectors = [
-                '.time',
-                '.date',
-                '.created_at',
-                '.timestamp',
-                '.datetime'
-            ]
-            
-            created_time = None
-            for time_sel in time_selectors:
-                time_elem = soup.select_one(time_sel)
-                if time_elem:
-                    created_time = time_elem.get_text(strip=True)
-                    if created_time:
-                        break
+            # <time class="small">3분 전</time>
+            created_time = ""
+            time_elem = soup.select_one('time.small')
+            if time_elem:
+                created_time = time_elem.get_text(strip=True)
             
             # 댓글 수 추출
-            comment_selectors = [
-                '.comment',
-                '.reply',
-                '.comment-count',
-                '.reply-count'
-            ]
-            
+            # <li title="댓글" class="comment">2</li>
             comment_count = "0"
-            for comment_sel in comment_selectors:
-                comment_elem = soup.select_one(comment_sel)
-                if comment_elem:
-                    comment_text = comment_elem.get_text(strip=True)
-                    # 숫자만 추출
-                    import re
-                    numbers = re.findall(r'\d+', comment_text)
-                    if numbers:
-                        comment_count = numbers[0]
-                        break
+            comment_elem = soup.select_one('li.comment')
+            if comment_elem:
+                comment_count = comment_elem.get_text(strip=True)
+            
+            # 조회수 추출 (있는 경우)
+            view_count = None
+            view_elem = soup.select_one('li.view')
+            if view_elem:
+                view_count = view_elem.get_text(strip=True)
             
             # 게시글 링크 추출
-            link_elem = soup.select_one('a[href]')
+            # <a class="article" href="/387605/v/384508581">
             post_link = None
+            link_elem = soup.select_one('a.article[href]')
             if link_elem:
                 href = link_elem.get('href')
                 if href:
@@ -630,6 +643,24 @@ class EverytimeCrawler:
                         post_link = f"{self.base_url}{href}"
                     else:
                         post_link = href
+            
+            # 게시글 정보 구성
+            post_info = {
+                'title': title,
+                'content': content,
+                'author': author,
+                'created_time': created_time,
+                'comment_count': comment_count,
+                'view_count': view_count,
+                'post_link': post_link,
+                'selector_used': selector_used
+            }
+            
+            return post_info
+            
+        except Exception as e:
+            print(f"⚠️ 게시글 파싱 중 오류: {e}")
+            return None
             
             # 조회수 추출 (있는 경우)
             view_selectors = [
@@ -671,7 +702,7 @@ class EverytimeCrawler:
     
     def get_post_detail(self, post_url):
         """
-        개별 게시글의 상세 정보 크롤링
+        개별 게시글의 상세 정보 크롤링 (댓글 포함)
         
         Args:
             post_url (str): 게시글 URL
@@ -683,48 +714,73 @@ class EverytimeCrawler:
             print(f"📖 게시글 상세 정보 크롤링: {post_url}")
             
             self.driver.get(post_url)
-            time.sleep(2)
+            time.sleep(3)  # 페이지 로딩 대기
             
             soup = BeautifulSoup(self.driver.page_source, 'html.parser')
             
-            # 게시글 내용 추출
+            # 게시글 제목 추출
+            title = ""
+            title_selectors = ['h1', 'h2.large', '.title', '.subject']
+            for title_sel in title_selectors:
+                title_elem = soup.select_one(title_sel)
+                if title_elem:
+                    title = title_elem.get_text(strip=True)
+                    if title:
+                        break
+            
+            # 게시글 내용 추출 (에브리타임 구조에 맞게)
+            content = ""
             content_selectors = [
+                '.large',  # 에브리타임 게시글 본문
                 '.content',
-                '.article-content',
+                '.article-content', 
                 '.post-content',
                 '.text',
-                '.body',
-                'p'
+                '.body'
             ]
             
-            content = ""
             for content_sel in content_selectors:
                 content_elem = soup.select_one(content_sel)
                 if content_elem:
                     content = content_elem.get_text(strip=True)
-                    if content and len(content) > 10:
+                    if content and len(content) > 5:
                         break
             
-            # 댓글 추출
+            # 댓글 추출 (에브리타임 구조 분석)
             comments = []
-            comment_selectors = [
-                '.comment',
-                '.reply', 
-                '.comment-item',
-                '.reply-item'
-            ]
             
-            for comment_sel in comment_selectors:
-                comment_elems = soup.select(comment_sel)
-                if comment_elems:
-                    for comment_elem in comment_elems:
-                        comment_text = comment_elem.get_text(strip=True)
-                        if comment_text and len(comment_text) > 2:
-                            comments.append(comment_text)
-                    break
+            # 에브리타임 댓글 구조: <ul class="comments"> 내의 <li> 요소들
+            comment_list = soup.select_one('ul.comments')
+            if comment_list:
+                comment_items = comment_list.select('li')
+                for item in comment_items:
+                    comment_data = self._extract_comment_info(item)
+                    if comment_data:
+                        comments.append(comment_data)
+            
+            # 대체 댓글 셀렉터
+            if not comments:
+                alt_selectors = [
+                    '.comment',
+                    '.reply',
+                    '.comment-item',
+                    '.reply-item',
+                    '[class*="comment"]'
+                ]
+                
+                for selector in alt_selectors:
+                    comment_elems = soup.select(selector)
+                    if comment_elems:
+                        for elem in comment_elems:
+                            comment_data = self._extract_comment_info(elem)
+                            if comment_data:
+                                comments.append(comment_data)
+                        if comments:
+                            break
             
             detail_info = {
                 'url': post_url,
+                'title': title,
                 'content': content,
                 'comments': comments,
                 'comment_count': len(comments),
@@ -735,8 +791,56 @@ class EverytimeCrawler:
             return detail_info
             
         except Exception as e:
-            print(f"❌ 게시글 상세 정보 크롤링 중 오류: {e}")
+            print(f"❌ 게시글 상세 정보 크롤링 실패: {e}")
             return None
+    
+    def _extract_comment_info(self, comment_element):
+        """댓글 정보 추출"""
+        try:
+            soup = BeautifulSoup(str(comment_element), 'html.parser')
+            
+            # 댓글 내용
+            content = ""
+            content_selectors = ['.large', 'p', '.text', '.content']
+            for sel in content_selectors:
+                elem = soup.select_one(sel)
+                if elem:
+                    content = elem.get_text(strip=True)
+                    if content:
+                        break
+            
+            # 작성자
+            author = "익명"
+            author_selectors = ['.small', '.author', '.writer', '.nickname']
+            for sel in author_selectors:
+                elem = soup.select_one(sel)
+                if elem:
+                    text = elem.get_text(strip=True)
+                    if text and not text.isdigit() and '분' not in text and ':' not in text:
+                        author = text
+                        break
+            
+            # 작성시간
+            created_time = ""
+            time_selectors = ['time', '.time', '.date', '.timestamp']
+            for sel in time_selectors:
+                elem = soup.select_one(sel)
+                if elem:
+                    created_time = elem.get_text(strip=True)
+                    if created_time:
+                        break
+            
+            if content and len(content) > 1:
+                return {
+                    'content': content,
+                    'author': author,
+                    'created_time': created_time
+                }
+            
+        except Exception as e:
+            print(f"⚠️ 댓글 파싱 오류: {e}")
+        
+        return None
     
     def save_board_posts_to_csv(self, posts, filename=None):
         """게시글 목록을 CSV 파일로 저장"""
@@ -794,6 +898,10 @@ class EverytimeCrawler:
         """드라이버 종료"""
         if self.driver:
             self.driver.quit()
+    
+    def quit(self):
+        """드라이버 종료 (close와 동일)"""
+        self.close()
     
     def __enter__(self):
         return self

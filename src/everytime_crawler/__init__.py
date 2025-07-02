@@ -20,16 +20,20 @@ __description__ = "에브리타임에서 강의 시간표, 게시판 글 등을 
 from .crawler import EverytimeCrawler
 from .utils import DataManager, TimetableAnalyzer, BoardAnalyzer, ScheduledCrawler
 
-# 게시판 ID 매핑
+# 게시판 ID 매핑 (실제 에브리타임 URL 기준)
 BOARD_MAP = {
-    "free": "자유게시판",
+    "free": {"id": "387605", "name": "성남캠 자유게시판"},
+    "secret": {"id": "375151", "name": "비밀게시판"},
+    "graduate": {"id": "387612", "name": "졸업생게시판"},
+    "freshman": {"id": "387615", "name": "새내기게시판"}
+}
+
+# 하위호환성을 위한 간단한 매핑
+BOARD_NAMES = {
+    "free": "성남캠 자유게시판",
     "secret": "비밀게시판", 
     "freshman": "새내기게시판",
-    "graduate": "졸업생게시판",
-    "job": "취업게시판",
-    "exam": "시험정보게시판",
-    "club": "동아리게시판",
-    "market": "장터게시판"
+    "graduate": "졸업생게시판"
 }
 
 __all__ = [
@@ -38,5 +42,6 @@ __all__ = [
     'TimetableAnalyzer',
     'BoardAnalyzer',
     'ScheduledCrawler',
-    'BOARD_MAP'
+    'BOARD_MAP',
+    'BOARD_NAMES'
 ]

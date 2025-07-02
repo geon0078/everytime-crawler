@@ -6,3 +6,15 @@ python-dotenv==1.0.0
 lxml==4.9.3
 webdriver-manager==4.0.1
 schedule==1.2.0
+
+# 대량 데이터 분석용 추가 패키지
+matplotlib==3.8.2
+seaborn==0.13.0
+numpy==1.25.2
+
+# 데이터 처리 성능 향상
+openpyxl==3.1.2
+xlsxwriter==3.1.9
+
+# 진행률 표시
+tqdm==4.66.1
