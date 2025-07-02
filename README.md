@@ -92,14 +92,47 @@ for subject in timetable:
 ### 게시판 크롤링
 
 ```python
-# 자유게시판 첫 3페이지 크롤링
-posts = crawler.get_board_posts("free", pages=3)
+# 자유게시판 3페이지 크롤링
+posts = crawler.get_board_posts("free", pages=3, delay=2)
 
 for post in posts:
     print(f"제목: {post['title']}")
     print(f"작성자: {post['author']}")
-    print(f"날짜: {post['date']}")
+    print(f"날짜: {post['created_time']}")
+    print(f"댓글: {post['comment_count']}개")
+    if post.get('post_link'):
+        print(f"링크: {post['post_link']}")
     print("---")
+
+# CSV/JSON 파일로 저장
+crawler.save_board_posts_to_csv(posts)
+crawler.save_board_posts_to_json(posts)
+
+# 개별 게시글 상세 정보
+if posts and posts[0].get('post_link'):
+    detail = crawler.get_post_detail(posts[0]['post_link'])
+    print(f"내용: {detail['content']}")
+    print(f"댓글: {len(detail['comments'])}개")
+```
+
+### 지원하는 게시판
+
+```python
+from src.everytime_crawler import BOARD_MAP
+
+# 사용 가능한 게시판 목록
+for board_id, board_name in BOARD_MAP.items():
+    print(f"{board_id}: {board_name}")
+
+# 출력:
+# free: 자유게시판
+# secret: 비밀게시판
+# freshman: 새내기게시판
+# graduate: 졸업생게시판
+# job: 취업게시판
+# exam: 시험정보게시판
+# club: 동아리게시판
+# market: 장터게시판
 ```
 
 ## 📁 프로젝트 구조
