@@ -1,10 +1,23 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
-*.py[codz]
+*.py[cod]
 *$py.class
 
 # C extensions
 *.so
+
+# Environment variables
+.env
+
+# Debug files
+debug/*.html
+debug/*.png
+debug/*.csv
+
+# Data files (keep structure but ignore actual data)
+data/*.csv
+data/*.json
+data/*.xlsx
 
 # Distribution / packaging
 .Python
